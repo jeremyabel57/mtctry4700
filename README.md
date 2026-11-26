@@ -7,6 +7,156 @@ This requires `pip` and network access if packages need to be downloaded.
 Importing `main` does not install packages. The installer does not install the
 Microsoft Edge WebView2 Runtime or .NET.
 
+## Instrument Queue
+
+`viqueue` owns an instrument dictionary, request and response queues, and a
+script execution stack. Install `requirements.txt` before using it. VISA
+VXI-11 connections also require an installed VISA implementation such as
+NI-VISA; a `raw:` address uses a TCP socket instead. Modbus uses TCP port 502
+by default, configurable through `device.instrument["mbIpPort"]`.
+
+```python
+from viqueue import viqueue
+
+device = viqueue("raw:192.0.2.1:5025")
+try:
+	device.request("*IDN?")
+	device.flush()
+	value, status = device.response()
+finally:
+	device.close()
+```
+
+Call `loop()` repeatedly for nonblocking operation; `flush()` waits for queued
+work to finish and raises `TimeoutError` if its deadline expires. Responses
+are `(value, status)` pairs, with status `0` for success and `-1` for an
+execution error. `request_blocking`, `command`, `modbus_read`, `modbus_write`,
+`upload_file`, `download_file`, picture downloads, and F4T helpers are also
+available. `get_id()` tries the configured SCPI protocol, the alternate SCPI
+protocol, and then F4T identification.
+`script()` supports basic `if`/`else`, `while`, `do`/`until`, `set`, variable
+assignments, local logging and file paths, and arithmetic substitutions.
+`#` and `##` script prefixes can queue file and picture downloads when a
+`file` argument is supplied. Relative script paths use a per-instrument working
+directory; `cd` does not change the process working directory.
+
+`eval`, `exec`, and `execute` evaluate Python expressions. They have access to
+Python builtins, shared and per-device script variables, `device`, `instrument`,
+and the per-device `variables` dictionary. For example,
+`$result=eval sum(values)` stores the result in `variables["result"]`.
+All three directives accept expressions, not Python statements. They are not
+sandboxed and can have side effects, so run only trusted scripts.
+
+A `viqueue("main")` script queue can route instrument commands after calling
+`register_device(name, device)` and executing `select name`. A `retName` command
+prefix publishes a named `(value, status)` completion through `has_notice()`
+and `take_notice()` instead of consuming unrelated response-queue entries.
+Notice names are shared across queue instances.
+
+Optional diagnostic edit controls can be attached with
+`set_diagnostics(output=..., queue=..., stack=...)`. They must be distinct
+multiline Win32 edit controls with automatic vertical scrolling, used on their
+owning thread. Attaching or reattaching clears and rebuilds the queue and stack
+views. [winfuncs.py](winfuncs.py) contains the edit-control helpers used here.
+
+The port is not fully AutoIt-compatible: arbitrary AutoIt expressions and
+`$oDev`/`$$` script syntax are not executed, and subnet scanning and debugger
+play/step controls are not implemented. Conditions and substitutions remain
+limited to supported AutoIt-style operators and variables. Test against the
+target instrument before relying on this code for hardware control.
+
+## Constants and Debugging
+
+`myconstants` exports the color and icon constants from the AutoIt sources.
+Supplementary Unicode icons are Python Unicode characters rather than explicit
+UTF-16 surrogate pairs. Several source icons use `Chr` with values outside its
+documented range; the Python constants use the intended Unicode characters.
+`SEP` uses AutoIt's default `|`; importing this module does not change any GUI
+event mode.
+
+The included AutoIt color constants are from the [AutoIt3 include mirror](https://github.com/dbkaynor/AutoIt3/blob/master/Include/ColorConstants.au3)
+and are accompanied by [AutoIt's license](AUTOIT_LICENSE.txt).
+`mydebug` provides `s_print_var`, `s_print_vars`, and console equivalents;
+its Python-friendly names also have AutoIt-style aliases.
+
+## Data Types
+
+`datatypes` provides Python versions of the helpers in the AutoIt source,
+including handle checks, temperature conversion, variable and dictionary
+access, binary formatting, splitting, and engineering notation. The original
+function names remain available, with snake-case aliases for Python callers.
+For example:
+
+```python
+from datatypes import assign_ex, eval_ex, number_engineering
+
+variables = {"measurements": [1.0, 2.0]}
+assign_ex("measurements[0]", 3.0, variables)
+value = eval_ex("measurements[0]", variables)
+label = number_engineering(value)
+```
+
+`AssignEx` and `EvalEx` use an explicit variable dictionary, or the module's
+`g_vars` when omitted, rather than AutoIt global variables. A failed indexed
+assignment returns `0`; failed lookups raise Python exceptions instead of
+setting AutoIt's `@error`. The engineering formatter handles zero and values
+below the smallest SI prefix, cases that exceed the original prefix loop.
+File checks accept Python file objects, descriptors, and Windows file handles;
+socket checks accept socket objects or native socket handles.
+
+## File Helpers
+
+`filemisc` provides filename incrementation, Windows path checks, INI array
+and native-control persistence, and an Excel write helper. INI functions take
+`section` and `filename` arguments, or use the module's `g_configSection` and
+`g_configFile` defaults. GUI helpers accept Win32 control handles. Array
+lookups return strings and preserve the supplied default when no data exists.
+New INI files use UTF-16 so Windows profile APIs preserve Unicode.
+
+```python
+from filemisc import file_name_auto_increment, ini_read_array, ini_write_array
+
+destination = file_name_auto_increment("capture.png")
+ini_write_array([["first", "second"]], "values", "Settings", "settings.ini")
+values = ini_read_array([], "values", "Settings", "settings.ini")
+```
+
+Filename generation does not reserve the returned path. `cloud_excel_write`
+requires a workbook path or URL as its fifth argument, plus Windows, pywin32,
+and an installed Excel application. SharePoint access must already be configured.
+Excel automation errors are raised as Python exceptions. The AutoIt source's
+hard-coded SharePoint URL was a placeholder, so no default target is supplied.
+
+## Deque, Queue, and Stack
+
+`deque` provides `Deque`, `Queue`, `Stack`, and `pQue` classes backed by
+`collections.deque`. `Deque.push()` and `pop_back()` operate at the back;
+`push_front()`, `pop()`, and `peek()` operate at the front. `Queue` restricts
+the public operations to FIFO use, and `Stack` to LIFO use. Removing or
+peeking at an empty collection raises `IndexError`.
+
+```python
+from deque import Queue, Stack, pQue
+
+requests = Queue()
+requests.push("*IDN?")
+request = requests.pop()
+
+blocks = Stack()
+block = pQue("while", "$count < 3")
+block.push("measurement")
+blocks.push(block)
+block.release()
+statement = block.pc_item()
+```
+
+`pQue` retains `cmd`, `cond`, `bCond`, `skip`, and an absolute `pc`. It starts
+parked; `release()` and `restart()` move the counter to the first item, and
+`pc_item()` returns an item and advances without removing it. `set_done()`
+moves the counter past the last item. A parked or finished `pc_item()` raises
+`IndexError`. `Deque` also provides bulk transfers, shallow copies, and
+front-to-back conversion through `to_array()`.
+
 ## Tabbed Window
 
 `MainWindow` provides a native resizable tab control and a status bar. Each
