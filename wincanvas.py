@@ -100,6 +100,7 @@ WHEEL_DELTA = 120  # Wheel movement corresponding to one step.
 PM_REMOVE = 0x0001  # Remove the retrieved message from the queue.
 SB_HORZ = 0  # Select the horizontal scrollbar.
 SB_VERT = 1  # Select the vertical scrollbar.
+SB_BOTH = 3
 SB_LINEUP = 0  # Scroll one step toward the start.
 SB_LINEDOWN = 1  # Scroll one step toward the end.
 SB_PAGEUP = 2  # Scroll one page toward the start.
@@ -153,6 +154,8 @@ def setup_win32():
 	# Change a window's visibility and report its previous visibility state.
 	user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
 	user32.ShowWindow.restype = wintypes.BOOL
+	user32.ShowScrollBar.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.BOOL]
+	user32.ShowScrollBar.restype = wintypes.BOOL
 
 	# Send a paint message immediately if the window needs repainting.
 	user32.UpdateWindow.argtypes = [wintypes.HWND]
@@ -807,6 +810,8 @@ class Viewport:
 	def _update_scrollbars(self):
 		self._updating_scrollbars = True
 		try:
+			if self.mode == ViewportMode.MIN:
+				user32.ShowScrollBar(self.hwnd, SB_BOTH, False)
 			while True:
 				rect = wintypes.RECT()
 				user32.GetClientRect(self.hwnd, ctypes.byref(rect))
@@ -816,7 +821,10 @@ class Viewport:
 					(SB_HORZ, canvas_width, width),
 					(SB_VERT, canvas_height, height),
 				):
-					info = SCROLLINFO(ctypes.sizeof(SCROLLINFO), SIF_RANGE | SIF_PAGE | SIF_DISABLENOSCROLL,
+					mask = SIF_RANGE | SIF_PAGE
+					if self.mode != ViewportMode.MIN:
+						mask |= SIF_DISABLENOSCROLL
+					info = SCROLLINFO(ctypes.sizeof(SCROLLINFO), mask,
 						0, canvas_size + abs(viewport_size - canvas_size) - 1, canvas_size)
 					user32.SetScrollInfo(self.hwnd, bar, ctypes.byref(info), True)
 				user32.GetClientRect(self.hwnd, ctypes.byref(rect))

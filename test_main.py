@@ -26,7 +26,9 @@ class DependencyInstallationTests(unittest.TestCase):
 				window = main.main_setup()
 				window_class.assert_called_once_with()
 				self.assertEqual(window.add_tab.call_args_list, [
-					call("Tab 1", mode=wincanvas.ViewportMode.MIN), call("Tab 2"), call("Tab 3")])
+					call("Tab 1", canvas_width=640, canvas_height=480, mode=wincanvas.ViewportMode.MIN),
+					call("Tab 2", canvas_width=640, canvas_height=480),
+					call("Tab 3", canvas_width=640, canvas_height=480)])
 				viewport = window.add_tab.return_value
 				viewport.add_webview.assert_called_once_with(
 					width=viewport.canvas_width, height=viewport.canvas_height, url="http://google.com")
@@ -58,8 +60,12 @@ class DependencyInstallationTests(unittest.TestCase):
 			window = main.main_setup()
 			try:
 				self.assertEqual(len(window.viewports), 3)
+				self.assertEqual([viewport.original_canvas_size for viewport in window.viewports],
+					[(640, 480)] * 3)
 				viewport = window.viewports[0]
 				self.assertEqual(viewport.mode, wincanvas.ViewportMode.MIN)
+				self.assertEqual(viewport._canvas_size(320, 240), (640, 480))
+				self.assertEqual(viewport._canvas_size(800, 600), (800, 600))
 				self.assertEqual(len(viewport.controls), 1)
 				browser = viewport.controls[0]["webview"]
 				canvas_rect = wincanvas.wintypes.RECT()

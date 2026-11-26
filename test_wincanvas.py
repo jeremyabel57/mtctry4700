@@ -79,8 +79,15 @@ class ViewportTests(unittest.TestCase):
 			frame_width = outer.right - outer.left - (client.right - client.left)
 			frame_height = outer.bottom - outer.top - (client.bottom - client.top)
 			viewport.mode = win.ViewportMode.MIN
+			self.assertTrue(user32.GetClientRect(viewport.hwnd, ctypes.byref(client)))
+			frame_width = outer.right - outer.left - (client.right - client.left)
+			frame_height = outer.bottom - outer.top - (client.bottom - client.top)
 
-			def check_layout(scale_x, scale_y):
+			def check_layout(scale_x=None, scale_y=None):
+				if scale_x is None:
+					self.assertTrue(user32.GetClientRect(viewport.hwnd, ctypes.byref(client)))
+					scale_x = max(viewport.zoom, (client.right - client.left) / 400)
+					scale_y = max(viewport.zoom, (client.bottom - client.top) / 300)
 				self.assertEqual(viewport.controls[:3], originals)
 				for entry in originals[:2]:
 					self.assertEqual(self.control_bounds(viewport.canvas, entry["hwnd"]), (
@@ -108,35 +115,37 @@ class ViewportTests(unittest.TestCase):
 					(max(1, round(100 * scale_x)), max(1, round(50 * scale_y))))
 
 			self.assertTrue(user32.MoveWindow(viewport.hwnd, 100, 100, 800 + frame_width, 450 + frame_height, True))
-			check_layout(2.0, 1.5)
+			check_layout()
 			viewport.zoom = 0.5
-			check_layout(2.0, 1.5)
+			check_layout()
 			viewport.zoom = 2.5
 			check_layout(2.5, 2.5)
 			viewport.zoom = 1.0
 			self.assertTrue(user32.MoveWindow(viewport.hwnd, 100, 100, 200 + frame_width, 600 + frame_height, True))
-			check_layout(1.0, 2.0)
+			check_layout()
 			added = viewport.add_control("STATIC", "", 200, 100, 40, 30)
 			viewport.set_picture(added, self.picture_data())
-			self.assertEqual(self.control_bounds(viewport.canvas, added), (200, 200, 40, 60))
+			scale_y = max(1.0, (client.bottom - client.top) / 300)
+			self.assertEqual(self.control_bounds(viewport.canvas, added),
+				(200, round(100 * scale_y), 40, round(30 * scale_y)))
 			bitmap_info = ctypes.create_string_buffer(128)
 			self.assertTrue(win.gdi32.GetObjectW(viewport._bitmaps[added][1],
 				ctypes.sizeof(bitmap_info), bitmap_info))
 			self.assertEqual((ctypes.c_long.from_buffer(bitmap_info, 4).value,
-				ctypes.c_long.from_buffer(bitmap_info, 8).value), (40, 60))
+				ctypes.c_long.from_buffer(bitmap_info, 8).value), (40, round(30 * scale_y)))
 			added_combo = viewport.add_control("COMBOBOX", "", 30, 180, 180, 90, style=2)
 			added_child = viewport.controls[-1]["child"]
 			self.assertEqual({key: added_child[key] for key in ("x", "y", "width", "height")},
 				{key: originals[2]["child"][key] for key in ("x", "y", "width", "height")})
 			self.assertEqual(self.control_bounds(added_combo, added_child["hwnd"]), (
-				added_child["x"], round(added_child["y"] * 2),
-				added_child["width"], round(added_child["height"] * 2),
+				added_child["x"], round(added_child["y"] * scale_y),
+				added_child["width"], round(added_child["height"] * scale_y),
 			))
 			viewport.mode = win.ViewportMode.FREE
 			check_layout(1.0, 1.0)
 			self.assertEqual(self.control_bounds(viewport.canvas, added), (200, 100, 40, 30))
 			viewport.mode = win.ViewportMode.MIN
-			check_layout(1.0, 2.0)
+			check_layout()
 		finally:
 			user32.DestroyWindow(viewport.hwnd)
 			viewport.loop()
@@ -175,6 +184,8 @@ class ViewportTests(unittest.TestCase):
 			for width, height in ((700, 500), (250, 150), (700, 150), (250, 500), (400, 300)):
 				self.assertTrue(user32.MoveWindow(viewport.hwnd, 100, 100,
 					width + frame_width, height + frame_height, True))
+				self.assertTrue(user32.GetClientRect(viewport.hwnd, ctypes.byref(client)))
+				width, height = client.right - client.left, client.bottom - client.top
 				expected_width, expected_height = max(400, width), max(300, height)
 				self.assertEqual(self.control_bounds(viewport.hwnd, viewport.canvas),
 					(0, 0, expected_width, expected_height))
@@ -335,6 +346,40 @@ class ViewportTests(unittest.TestCase):
 		finally:
 			user32.DestroyWindow(viewport.hwnd)
 			viewport.loop()
+
+	def test_min_scrollbars_hide_when_canvas_fits(self):
+		parent = win.Viewport(width=900, height=800)
+		viewport = None
+		try:
+			viewport = win.Viewport(parent=parent.canvas, width=640, height=480,
+				canvas_width=640, canvas_height=480, mode=win.ViewportMode.MIN)
+			parent.set_visible(True)
+			viewport.set_visible(True)
+			for width, height, expected in (
+				(640, 480, 0), (800, 600, 0), (600, 400, win.WS_HSCROLL | win.WS_VSCROLL),
+				(640, 480, 0), (700, 400, win.WS_VSCROLL), (600, 550, win.WS_HSCROLL),
+				(640, 400, win.WS_HSCROLL | win.WS_VSCROLL),
+				(600, 480, win.WS_HSCROLL | win.WS_VSCROLL), (800, 600, 0),
+			):
+				viewport.resize(width, height)
+				style = user32.GetWindowLongW(viewport.hwnd, win.GWL_STYLE)
+				self.assertEqual(style & (win.WS_HSCROLL | win.WS_VSCROLL), expected)
+			viewport.zoom = 2.0
+			self.assertEqual(user32.GetWindowLongW(viewport.hwnd, win.GWL_STYLE) &
+				(win.WS_HSCROLL | win.WS_VSCROLL), win.WS_HSCROLL | win.WS_VSCROLL)
+			viewport.zoom = 1.0
+			self.assertEqual(user32.GetWindowLongW(viewport.hwnd, win.GWL_STYLE) &
+				(win.WS_HSCROLL | win.WS_VSCROLL), 0)
+			viewport.mode = win.ViewportMode.FREE
+			self.assertEqual(user32.GetWindowLongW(viewport.hwnd, win.GWL_STYLE) &
+				(win.WS_HSCROLL | win.WS_VSCROLL), win.WS_HSCROLL | win.WS_VSCROLL)
+			viewport.mode = win.ViewportMode.MIN
+			self.assertEqual(user32.GetWindowLongW(viewport.hwnd, win.GWL_STYLE) &
+				(win.WS_HSCROLL | win.WS_VSCROLL), 0)
+		finally:
+			if viewport is not None:
+				viewport.close()
+			parent.close()
 
 	def test_scrollbars_remain_stable_at_exact_fit(self):
 		viewport = win.Viewport(width=700, height=700, canvas_width=400, canvas_height=600)

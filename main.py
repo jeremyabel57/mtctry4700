@@ -20,10 +20,10 @@ def install_dependencies():
 def main_setup():
 	window = MainWindow()
 	try:
-		viewport = window.add_tab("Tab 1", mode=ViewportMode.MIN)
+		viewport = window.add_tab("Tab 1", canvas_width=640, canvas_height=480, mode=ViewportMode.MIN)
 		viewport.add_webview(width=viewport.canvas_width, height=viewport.canvas_height, url="http://google.com")
-		window.add_tab("Tab 2")
-		window.add_tab("Tab 3")
+		window.add_tab("Tab 2", canvas_width=640, canvas_height=480)
+		window.add_tab("Tab 3", canvas_width=640, canvas_height=480)
 		window.select_tab(0)
 		window.set_visible(True)
 		loop.append(window.loop)

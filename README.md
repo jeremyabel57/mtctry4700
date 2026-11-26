@@ -112,11 +112,12 @@ while viewport.loop():
 ```
 
 `viewport.hwnd` is the viewport's Win32 window handle, and `viewport.canvas`
-is the child canvas handle. Canvas dimensions are in pixels. Scrollbars appear
-on both axes and reposition the child window. A larger canvas scrolls through
-the viewport; a smaller canvas can be moved within the available space. Each
-scrollbar's page size is the corresponding scaled canvas dimension, and it is
-disabled when the canvas exactly fits that axis.
+is the child canvas handle. Canvas dimensions are in pixels. Scrollbars
+reposition the child window. In `FREE` mode, scrollbars appear on both axes:
+a larger canvas scrolls through the viewport, while a smaller canvas can be
+moved within the available space. Each scrollbar's page size is the
+corresponding scaled canvas dimension, and it is disabled when the canvas
+exactly fits that axis. In `MIN` mode, scrollbars appear only when needed.
 The viewport starts hidden; call `set_visible(True)` to show it and
 `set_visible(False)` to hide it without closing it.
 
