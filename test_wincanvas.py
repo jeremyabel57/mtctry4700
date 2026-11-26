@@ -39,6 +39,30 @@ win.gdi32.DeleteDC.restype = wintypes.BOOL
 
 
 class ViewportTests(unittest.TestCase):
+	def test_child_viewport_parent_resize_and_close(self):
+		outer = win.Viewport(width=700, height=500)
+		child = None
+		try:
+			child = win.Viewport(parent=outer.canvas, width=300, height=200)
+			self.assertEqual(user32.GetParent(child.hwnd), outer.canvas)
+			self.assertFalse(user32.IsWindowVisible(child.hwnd))
+			child.resize(250, 150, x=20, y=30)
+			self.assertEqual(self.control_bounds(outer.canvas, child.hwnd), (20, 30, 250, 150))
+			child.resize(200, 100)
+			self.assertEqual(self.control_bounds(outer.canvas, child.hwnd), (20, 30, 200, 100))
+			child.set_visible(True)
+			self.assertFalse(user32.IsWindowVisible(child.hwnd))
+			outer.set_visible(True)
+			self.assertTrue(user32.IsWindowVisible(child.hwnd))
+			child.close()
+			self.assertFalse(user32.IsWindow(child.hwnd))
+			self.assertFalse(child.loop())
+			child.close()
+		finally:
+			if child is not None:
+				child.close()
+			outer.close()
+
 	def test_min_layout_scales_on_resize_and_mode_change(self):
 		viewport = win.Viewport(width=700, height=500, canvas_width=400, canvas_height=300)
 		try:

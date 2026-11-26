@@ -72,6 +72,7 @@ WS_HSCROLL = 0x00100000  # Add a horizontal scrollbar.
 WS_VSCROLL = 0x00200000  # Add a vertical scrollbar.
 WS_CHILD = 0x40000000  # Create a child window.
 WS_VISIBLE = 0x10000000  # Make the window initially visible.
+WS_CLIPSIBLINGS = 0x04000000  # Clip drawing against sibling windows.
 SS_WHITERECT = 0x00000006  # Fill a static control with white.
 SS_BITMAP = 0x0000000E  # Display a bitmap in a static control.
 SS_TYPEMASK = 0x0000001F  # Mask for the type of static control.
@@ -81,6 +82,9 @@ STM_GETIMAGE = 0x0173  # Get a static control's image.
 IMAGE_BITMAP = 0  # Select a bitmap image.
 SW_HIDE = 0  # Hide the window.
 SW_SHOW = 5  # Show the window in its current state.
+SWP_NOMOVE = 0x0002  # Preserve the window position.
+SWP_NOZORDER = 0x0004  # Preserve the window stacking order.
+SWP_NOACTIVATE = 0x0010  # Do not activate the window when resizing it.
 WM_DESTROY = 0x0002  # Window is being destroyed.
 WM_SIZE = 0x0005  # Window client area has been resized.
 WM_QUIT = 0x0012  # Thread message requesting the message loop to exit.
@@ -191,6 +195,10 @@ def setup_win32():
 		wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.BOOL
 	]
 	user32.MoveWindow.restype = wintypes.BOOL
+	user32.SetWindowPos.argtypes = [
+		wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT
+	]
+	user32.SetWindowPos.restype = wintypes.BOOL
 
 	# Set selected scrollbar properties and return the resulting position.
 	user32.SetScrollInfo.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.POINTER(SCROLLINFO), wintypes.BOOL]
@@ -330,7 +338,7 @@ class Viewport:
 	"""A native viewport containing a scrollable canvas window."""
 
 	def __init__(self, title="Viewport", width=800, height=600, canvas_width=1600, canvas_height=1200,
-			mode=ViewportMode.FREE):
+			mode=ViewportMode.FREE, parent=None):
 		if canvas_width <= 0 or canvas_height <= 0:
 			raise ValueError("Canvas dimensions must be positive")
 		self._mode = ViewportMode(mode)
@@ -366,10 +374,11 @@ class Viewport:
 		if not user32.RegisterClassW(ctypes.byref(window_class)):
 			raise ctypes.WinError(ctypes.get_last_error())
 
+		style = WS_HSCROLL | WS_VSCROLL | (WS_CHILD | WS_CLIPSIBLINGS if parent else WS_OVERLAPPEDWINDOW)
+		position = 0 if parent else -2147483648
 		self.hwnd = user32.CreateWindowExW(
-			0, self.class_name, title, WS_OVERLAPPEDWINDOW | WS_HSCROLL | WS_VSCROLL,
-			-2147483648, -2147483648, width, height,
-			None, None, self.instance, None,
+			0, self.class_name, title, style, position, position, width, height,
+			parent, None, self.instance, None,
 		)
 		if not self.hwnd:
 			error = ctypes.get_last_error()
@@ -424,6 +433,30 @@ class Viewport:
 		user32.ShowWindow(self.hwnd, SW_SHOW if visible else SW_HIDE)
 		if visible:
 			user32.UpdateWindow(self.hwnd)
+
+	def resize(self, width, height, x=None, y=None):
+		"""Resize the viewport and optionally move it in parent coordinates."""
+		if self._closed:
+			raise RuntimeError("Cannot resize a closed viewport")
+		if width < 0 or height < 0:
+			raise ValueError("Viewport dimensions must not be negative")
+		if (x is None) != (y is None):
+			raise ValueError("Both x and y are required to move a viewport")
+		flags = SWP_NOZORDER | SWP_NOACTIVATE
+		if x is None:
+			flags |= SWP_NOMOVE
+		if not user32.SetWindowPos(self.hwnd, None, x or 0, y or 0, width, height, flags):
+			raise ctypes.WinError(ctypes.get_last_error())
+
+	def close(self):
+		"""Destroy the viewport and release its registered window class."""
+		if threading.get_ident() != self._thread:
+			raise RuntimeError("Viewport must be closed on its creating thread")
+		if self._finished:
+			return
+		if not self._closed and not user32.DestroyWindow(self.hwnd):
+			raise ctypes.WinError(ctypes.get_last_error())
+		self.loop()
 
 	def add_control(self, class_name, text="", x=0, y=0, width=100, height=30,
 			style=0, ex_style=0, control_id=0, font_size=12):

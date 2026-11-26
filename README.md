@@ -1,10 +1,36 @@
 # mtctry4700
 
 Running `python main.py` installs the Python dependencies from
-`requirements.txt` before starting the application, using the same interpreter.
+`requirements.txt` before opening the main window with three viewport tabs,
+using the same interpreter.
 This requires `pip` and network access if packages need to be downloaded.
 Importing `main` does not install packages. The installer does not install the
 Microsoft Edge WebView2 Runtime or .NET.
+
+## Tabbed Window
+
+`MainWindow` provides a native resizable tab control and a status bar. Each
+added tab owns one viewport:
+
+```python
+import time
+from winmain import MainWindow
+
+window = MainWindow(title="My Application")
+first = window.add_tab("First")
+first.add_control("BUTTON", "Click", x=20, y=20)
+window.add_tab("Second")
+window.select_tab(0)
+window.set_status("Ready")
+window.set_visible(True)
+
+while window.loop():
+	time.sleep(0.01)
+```
+
+The selected viewport fills the tab's content area; other viewports are hidden.
+Create and use the window and its viewports on the same thread. The window
+starts hidden and `window.close()` closes its viewports and releases resources.
 
 ## WebView2 window
 

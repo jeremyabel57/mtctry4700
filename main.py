@@ -7,7 +7,8 @@ from pathlib import Path
 
 loop = []
 
-from wincanvas import Viewport
+from winmain import MainWindow
+from wincanvas import ViewportMode
 
 
 def install_dependencies():
@@ -17,8 +18,19 @@ def install_dependencies():
 
 
 def main_setup():
-	viewport = Viewport()
-	loop.append(viewport.loop)
+	window = MainWindow()
+	try:
+		viewport = window.add_tab("Tab 1", mode=ViewportMode.MIN)
+		viewport.add_webview(width=viewport.canvas_width, height=viewport.canvas_height, url="http://google.com")
+		window.add_tab("Tab 2")
+		window.add_tab("Tab 3")
+		window.select_tab(0)
+		window.set_visible(True)
+		loop.append(window.loop)
+	except Exception:
+		window.close()
+		raise
+	return window
 
 
 def main_loop():
